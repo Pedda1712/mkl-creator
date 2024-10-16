@@ -3,6 +3,7 @@ Created to be able to quickly generate datasets for multiple
 kernel learning algorithms.
 """
 
+from sklearn.model_selection import train_test_split
 from sklearn.datasets import make_blobs
 from sklearn import preprocessing
 import numpy as np
@@ -157,16 +158,25 @@ def main():
     match choice:
         case 1 | _:
             kernels, targets = blobs()
-    hf = h5py.File(fname, "w")
+
+    test_size = float(input("size of test dataset (0 to 1)>"))
+    indices = np.arange(kernels[0].shape[0])
+    ind_train, ind_test = train_test_split(indices, test_size=test_size, random_state=0)
+    
+    hfTrain = h5py.File(fname + "_train", "w")
+    hfTest = h5py.File(fname + "_test", "w")
     names = []
     i = 1
     for K in kernels:
         name: str = "K" + str(i)
         names.append(name)
-        hf.create_dataset(name, data=K)
+        hfTrain.create_dataset(name, data=K[ind_train, :][:, ind_train])
+        hfTest.create_dataset(name, data=K[ind_test, :][:, ind_train])
         i = i + 1
-    hf.create_dataset("Labels", data=[targets])
-    hf.create_dataset("Kernels", data=[names])
+    hfTrain.create_dataset("Labels", data=[targets[ind_train]])
+    hfTest.create_dataset("Labels", data=[targets[ind_test]])
+    hfTrain.create_dataset("Kernels", data=[names])
+    hfTest.create_dataset("Kernels", data=[names])
 
 
 if __name__ == "__main__":
