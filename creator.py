@@ -2,7 +2,8 @@
 Created to be able to quickly generate datasets for multiple
 kernel learning algorithms.
 """
-
+from sklearn import preprocessing
+from ucimlrepo import fetch_ucirepo 
 from sklearn.model_selection import train_test_split
 from sklearn.datasets import make_blobs
 from sklearn import preprocessing
@@ -95,6 +96,11 @@ class PolyKernel(Kernel):
         return normalize(np.pow((np.dot(X1, X2.T) + q), self.p) * alpha)
 
 
+def gamma_estimate(X):
+    n_features = X.shape[1]
+    return 1 / (n_features * np.var(X))
+
+
 def getKernels(X: np.ndarray) -> list[np.ndarray]:
     """Let the user specify kernels."""
     result: list(np.ndarray) = []
@@ -107,7 +113,8 @@ def getKernels(X: np.ndarray) -> list[np.ndarray]:
     for char in ks:
         match char:
             case "g":
-                gamma = float(input("gamma for gaussian?>"))
+                est = gamma_estimate(X)
+                gamma = float(input(f'gamma for gaussian? (heuristic: {est:.3f})>'))
                 result.append(RBFKernel(gamma).calculate(X, X))
                 continue
             case "t":
@@ -143,10 +150,51 @@ def blobs():
     return getKernels(X), y
 
 
+def uci():
+    """uci data getter."""
+    id = int(input("(uci) id>"))
+    s = fetch_ucirepo(id=id)
+    X = np.array(s.data.features)
+    y = np.array(s.data.targets)
+    cleaning = True
+    while cleaning:
+        print("(uci) (cleaning) the following labels appear in targets: ")
+        print(np.unique(y))
+        print("(uci) (cleaning) actions: ")
+        print("[1] nothing")
+        print("[2] merge labels")
+        print("[3] drop rows with label")
+        choice = input("(default 1)>")
+        try:
+            choice = int(choice)
+        except ValueError:
+            choice = 1
+        match choice:
+            case 2:
+                l1 = input("(uci) (cleaning) (merging) label to merge into>")
+                l2 = input("(uci) (cleaning) (merging) label to merge>")
+                inds1 = np.array(np.where(y == l2))[0]
+                inds2 = np.array(np.where(y == l1))[0]
+                y[inds1] = y[inds2][0]
+            case 3:
+                l1 = input("(uci) (cleaning) (drop label) label to drop>")
+                inds = np.array(np.where(y != l1))[0]
+                X = X[inds, :]
+                y = np.ndarray.flatten(y[inds])
+            case 1 | _:
+                cleaning = False
+    scaler = preprocessing.StandardScaler().fit(X)
+    X = scaler.transform(X)
+    _, y = np.unique(np.array(y), return_inverse=True)
+    y = np.ndarray.flatten(y)
+    return getKernels(X), y
+
+
 def main():
     """Synthetic dataset generator with h5 file output."""
     print("what type of dataset do you want to create?")
     print("[1] blob data")
+    print("[2] uci data")
     choice = input("(default 1)>")
     try:
         choice = int(choice)
@@ -156,27 +204,21 @@ def main():
     kernels = []
     targets = []
     match choice:
+        case 2:
+            kernels, targets = uci()
         case 1 | _:
             kernels, targets = blobs()
 
-    test_size = float(input("size of test dataset (0 to 1)>"))
-    indices = np.arange(kernels[0].shape[0])
-    ind_train, ind_test = train_test_split(indices, test_size=test_size, random_state=0)
-    
-    hfTrain = h5py.File(fname + "_train", "w")
-    hfTest = h5py.File(fname + "_test", "w")
+    hfTrain = h5py.File(fname, "w")
     names = []
     i = 1
     for K in kernels:
         name: str = "K" + str(i)
         names.append(name)
-        hfTrain.create_dataset(name, data=K[ind_train, :][:, ind_train])
-        hfTest.create_dataset(name, data=K[ind_test, :][:, ind_train])
+        hfTrain.create_dataset(name, data=K)
         i = i + 1
-    hfTrain.create_dataset("Labels", data=[targets[ind_train]])
-    hfTest.create_dataset("Labels", data=[targets[ind_test]])
+    hfTrain.create_dataset("Labels", data=[targets])
     hfTrain.create_dataset("Kernels", data=[names])
-    hfTest.create_dataset("Kernels", data=[names])
 
 
 if __name__ == "__main__":
